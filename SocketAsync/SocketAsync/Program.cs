@@ -112,7 +112,6 @@ namespace SocketAsync
 
         private static void addQueue(QueueEntry qe)
         {
-
             lock (qentry)
             {
                 qentry.Enqueue(qe);
