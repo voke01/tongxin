@@ -1,0 +1,6 @@
+d:\我的资料\documents\visual studio 2013\Projects\SocketAsync\SocketAsync\bin\Debug\SocketAsync.exe.config
+d:\我的资料\documents\visual studio 2013\Projects\SocketAsync\SocketAsync\bin\Debug\SocketAsync.exe
+d:\我的资料\documents\visual studio 2013\Projects\SocketAsync\SocketAsync\bin\Debug\SocketAsync.pdb
+d:\我的资料\documents\visual studio 2013\Projects\SocketAsync\SocketAsync\obj\Debug\SocketAsync.csprojResolveAssemblyReference.cache
+d:\我的资料\documents\visual studio 2013\Projects\SocketAsync\SocketAsync\obj\Debug\SocketAsync.exe
+d:\我的资料\documents\visual studio 2013\Projects\SocketAsync\SocketAsync\obj\Debug\SocketAsync.pdb
