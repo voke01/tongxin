@@ -11,52 +11,295 @@ namespace SocketAsync
 {
     class Program
     {
+        public static int ReceiveBufferLength = 1024;
+        public static int maxConnect = 10000;
         static void Main(string[] args)
         {
-            start();
+            initConfig conf = new initConfig(maxConnect, ReceiveBufferLength);
+            ServerBase server = new ServerBase();
+            server.Open(8088);
+
             Console.ReadKey();
         }
-        static Socket listenSocket;
-        static int m_numConnectedSockets;
-        static ObjectPool<SocketAsyncEventArgs> SocketAsyncEventArgsPools = new ObjectPool<SocketAsyncEventArgs>(1024);
 
-        static void start()
+    }
+    //初始化配置
+    public class initConfig
+    {
+        internal static initSocketAsyncQueue socketasync_queue;
+        public static int Connections;
+        public initConfig(int maxconnecttinos, int ReceiveBufferLength)
         {
-            IPEndPoint localEndPoint = new IPEndPoint(IPAddress.Any, 9900);
-            listenSocket = new Socket(localEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            listenSocket.Bind(localEndPoint);
-            listenSocket.Listen(10);
-            startAccept(null);
-            Console.WriteLine("服务已启动...");
+            Connections = maxconnecttinos;
+            socketasync_queue = new initSocketAsyncQueue(maxconnecttinos, ReceiveBufferLength);
         }
 
-        //开始接收连接，SocketAsyncEventArgs有连接时，通过Complete事件回调
-        static void startAccept(SocketAsyncEventArgs acceptEventArg)
+    }
+
+    #region 初始化配置
+    internal class initSocketAsyncQueue
+    {
+        private int _receviceBuffLength;
+        protected Queue<saea> socketAsync_Queue;
+        public initSocketAsyncQueue(int maxConnect, int receBuffLength)
         {
-            try
+            this._receviceBuffLength = receBuffLength;
+            this.socketAsync_Queue = new Queue<saea>(maxConnect);
+            for (int i = 0; i < maxConnect; i++)
             {
-                if (acceptEventArg == null)
+                socketAsync_Queue.Enqueue(saeaEntry());
+            }
+        }
+
+        protected saea saeaEntry()
+        {
+            saea _saea;
+            if (this._receviceBuffLength > 0)
+            {
+                _saea = new saea(this._receviceBuffLength);
+            }
+            else
+            {
+                _saea = new saea();
+            }
+            return _saea;
+        }
+
+        public void saea_enq(saea e)
+        {
+            lock (this)
+            {
+                socketAsync_Queue.Enqueue(e);
+                Console.WriteLine(socketAsync_Queue.Count);
+            }
+        }
+
+        /// <summary>
+        /// 出队列
+        /// </summary>
+        /// <returns></returns>
+        public virtual saea saea_dep()
+        {
+            saea result;
+            lock (socketAsync_Queue)
+            {
+                saea pram;
+                if (socketAsync_Queue.Count > 0)
                 {
-                    acceptEventArg = new SocketAsyncEventArgs();
-                    acceptEventArg.Completed += new EventHandler<SocketAsyncEventArgs>(AcceptEventArg_Completed);
+                    pram = socketAsync_Queue.Dequeue();
                 }
                 else
                 {
-                    acceptEventArg.AcceptSocket = null;//释放，投递下次请求
+                    pram = saeaEntry();
                 }
 
-                //如果IO操作被挂起，返回true, 操作完成时，将引发 e 参数的 SocketAsyncEventArgs::Completed 事件。
-                //如果IO操作同步完成，返回false，在这种情况下，
-                //将不会引发 e 参数的 SocketAsyncEventArgs::Completed 事件，并且可能在方法调用返回后立即检查作为参数传递的 e 对象以检索操作的结果
-                bool is_asyncEvent = listenSocket.AcceptAsync(acceptEventArg);
-                //同步完成
-                if (!is_asyncEvent)
-                {
-                    ProcessAccept(acceptEventArg);
+                pram.resetBuff();
+                result = pram;
+            }
+            Console.WriteLine(socketAsync_Queue.Count);
+            return result;
+        }
+    }
 
-                    //把当前异步事件释放，等待下次连接  
-                    startAccept(acceptEventArg);
-                    Console.WriteLine("同步");
+    internal class saea : SocketAsyncEventArgs
+    {
+        public Socket _socket;
+        //构造函数
+        public saea(int receBuffLength)
+        {
+            byte[] array = new byte[receBuffLength];
+            base.SetBuffer(array, 0, array.Length);
+        }
+        public saea() { }
+        public void resetBuff()
+        {
+            if (base.Buffer != null)
+            {
+                base.SetBuffer(0, base.Buffer.Length);
+            }
+        }
+
+        protected override void OnCompleted(SocketAsyncEventArgs e)
+        {
+            base.OnCompleted(e);
+            if (e.LastOperation == SocketAsyncOperation.Send)
+            {
+
+            }
+            else if (e.LastOperation == SocketAsyncOperation.Receive)
+            {
+                processReceive((saea)e);
+            }
+        }
+
+        internal void processSend(saea e)
+        {
+
+        }
+
+        internal void processReceive(saea e)
+        {
+            try
+            {
+                //aq aq = e._aq;
+                if (e.BytesTransferred > 0 && e.SocketError == SocketError.Success)
+                {
+                    Console.WriteLine(e.BytesTransferred);
+
+
+
+                    if (!e._socket.ReceiveAsync(e))
+                    {
+                        Console.WriteLine("------------------------------------------------------------------");
+                        //同步接收完成处理事件
+                        processReceive(e);
+                    }
+                }
+                else
+                {
+                    ReleaseSocketAsync(e);
+                }
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+        }
+
+        void ReleaseSocketAsync(saea e)
+        {
+            if (e._socket != null)
+            {
+                Console.WriteLine("A client  {0}  Release", e._socket.RemoteEndPoint);
+                try
+                {
+                    if (e._socket != null)
+                    {
+                        e._socket.Shutdown(SocketShutdown.Both);
+                    }
+                }
+                catch
+                {
+                }
+                try
+                {
+                    if (e._socket != null)
+                    {
+                        e._socket.Close();
+                    }
+                }
+                catch
+                {
+                }
+                initConfig.socketasync_queue.saea_enq(e);
+
+
+            }
+        }
+
+    }
+    #endregion
+
+    public class ServerBase
+    {
+        public int Listens
+        {
+            get;
+            set;
+        }
+        private TcpServer tcpserver;
+        public ServerBase()
+        {
+            this.Listens = 50;
+        }
+        
+        public void Open(int port)
+        {
+            this.Open(new IPEndPoint(IPAddress.Any, port));
+        }
+
+        public void Open(IPEndPoint ep)
+        {
+            this.tcpserver = new TcpServer();
+
+            //程序启动
+            this.tcpserver.start(ep, this.Listens);
+        }
+
+    }
+
+    public class TcpServer
+    {
+        private Socket listenSocket;
+        private static int m_numConnectedSockets;
+
+        private Queue<Socket> Socket_accpet_queue = new Queue<Socket>(1024);
+        private Socket _socket;
+
+        public static ObjectPool<SocketAsyncEventArgs> SocketAsyncEventArgsPools = new ObjectPool<SocketAsyncEventArgs>(1024);
+
+        /// <summary>
+        /// 程序开始
+        /// </summary>
+        /// <param name="ipendpoint"></param>
+        /// <param name="listens"></param>
+        public void start(IPEndPoint ipendpoint, int listens)
+        {
+            listenSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            listenSocket.Bind(ipendpoint);
+            listenSocket.Listen(listens);
+
+            ThreadPool.QueueUserWorkItem(new WaitCallback(this.handle_SocketQueue));
+            ThreadPool.QueueUserWorkItem(new WaitCallback(this.startAccept));
+
+            Console.WriteLine("服务已启动...");
+        }
+
+        //--------------------------------------------------------------
+        // 对SocketQueue队列里的Socket进行处理
+        //
+        //
+        //-------------------------------------------------------------- 
+        private void handle_SocketQueue(object obj)
+        {
+            while (true)
+            {
+                try
+                {
+                    this._socket = this.PopQueue();
+                    if (_socket != null)
+                    {
+                        handle_Socket(_socket);
+                    }
+                    else
+                    {
+                        Thread.Sleep(10);
+                    }
+                }
+                catch (Exception)
+                {
+
+                    throw;
+                }
+            }
+
+        }
+
+        private void handle_Socket(Socket se)
+        {
+            //aq aq = new aq(se._socket);
+            //this.OnConnected(aq);
+            //取出队列
+            saea _socketasync = initConfig.socketasync_queue.saea_dep();
+
+            _socketasync._socket = se;
+            try
+            {
+                if (!_socketasync._socket.ReceiveAsync(_socketasync))
+                {
+                    //同步接收完成处理事件
+                    _socketasync.processReceive(_socketasync);
                 }
             }
             catch (Exception)
@@ -67,17 +310,49 @@ namespace SocketAsync
 
         }
 
-        //接受连接响应事件
-        static void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)
-        {
-            ProcessAccept(e);
 
-            //把当前异步事件释放，等待下次连接  
-            startAccept(e);
+
+
+        //--------------------------------------------------------------------------------
+        //开始接收连接，【SocketAsyncEventArgs有连接时，通过Complete事件回调】
+        //
+        //--------------------------------------------------------------------------------
+        private void startAccept(object obj)
+        {
+            try
+            {
+                bool is_asyncEvent = true;
+                while (is_asyncEvent)
+                {
+                    SocketAsyncEventArgs acceptEventArg = SocketAsyncEventArgsPools.Pop();
+                    acceptEventArg.Completed += new EventHandler<SocketAsyncEventArgs>(AcceptEventArg_Completed);
+
+                    is_asyncEvent = !listenSocket.AcceptAsync(acceptEventArg);
+                    //同步完成
+                    if (is_asyncEvent)
+                    {
+                        ProcessAccept(acceptEventArg);
+                        Console.WriteLine("同步---------------------------------------------------");
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+
         }
 
-        //接收连接处理
-        static void ProcessAccept(SocketAsyncEventArgs e)
+        //接受连接响应事件
+        private void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)
+        {
+            ProcessAccept(e);
+            //投递下次请求
+            startAccept(null);
+        }
+
+        //接收连接处理事件，成功时加入队列，
+        private void ProcessAccept(SocketAsyncEventArgs e)
         {
             try
             {
@@ -88,37 +363,53 @@ namespace SocketAsync
                         m_numConnectedSockets, e.AcceptSocket.RemoteEndPoint, e.LastOperation.ToString(), e.SocketError);
 
                     //加入队列
-                    addQueue(new QueueEntry
-                    {
-                        _socket = e.AcceptSocket
-                    });
+                    addQueue(e.AcceptSocket);
                 }
                 else
                 {
                     //连接失败，释放socket
                     ReleaseSocket(e.AcceptSocket);
                 }
+
+                e.AcceptSocket = null;//释放
             }
             catch (Exception)
             {
-
                 throw;
             }
-
-        }
-
-        #region 加入队列
-        private static Queue<QueueEntry> qentry = new Queue<QueueEntry>(1024);
-
-        private static void addQueue(QueueEntry qe)
-        {
-            lock (qentry)
+            finally
             {
-                qentry.Enqueue(qe);
+                e.Completed -= new EventHandler<SocketAsyncEventArgs>(AcceptEventArg_Completed);
+                SocketAsyncEventArgsPools.Push(e);
             }
         }
 
-        #endregion
+        //加入队列
+        private void addQueue(Socket qe)
+        {
+            lock (Socket_accpet_queue)
+            {
+                Socket_accpet_queue.Enqueue(qe);
+            }
+        }
+
+        //出队列
+        private Socket PopQueue()
+        {
+            Socket se;
+            lock (Socket_accpet_queue)
+            {
+                if (this.Socket_accpet_queue.Count > 0)
+                {
+                    se = Socket_accpet_queue.Dequeue();
+                }
+                else
+                {
+                    se = null;
+                }
+            }
+            return se;
+        }
 
         //释放socket
         static void ReleaseSocket(Socket socket)
@@ -148,13 +439,15 @@ namespace SocketAsync
             }
         }
 
-        /**end*/
-    }
 
-    internal class QueueEntry
-    {
-        //public ByteArraySegment a = new ByteArraySegment();
-        public Socket _socket;
-        //internal static string c = "V/r2I2CpRaI=";
     }
+    //
+    //internal class SocketEntry
+    //{
+    //    public ByteArraySegment a = new ByteArraySegment();
+    //    public Socket _socket;
+    //    //internal static string c = "V/r2I2CpRaI=";
+    //}
+
+
 }
